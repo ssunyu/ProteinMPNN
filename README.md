@@ -1,52 +1,52 @@
-# ProteinMPNN(Dauparas, 2022) Implementation
-> PyTorch implementation of Graph-based Protein Sequence Design via Structural Constraints.
-그래프 이론에 기반한 단백질 서열 설계 모델 ProteinMPNN을 바닥부터 시작하는 모델러의 입장에서 어떤 논리적 사고방식을 거쳐서 모델이 만들어졌는지에 대한 high-level의 논리 과정에 따른 모델의 Core Architecture를 바닥부터 구현합니다. 
+# Protein-Reverse-Inference-Core
 
----
-## CORE1: Modeling의 목적과 수학적 구조 설계 
-
-### 1) 목적 
-* **단백질 3차 구조로 아미노산 서열 reverse inference**
-
-### 2) 구조 설계 
-* **1. Hierarchical layer (Z - X - Y)**
-    * **(Z) 잔기간 interaction**이 - **(X) 단백질 3차원 구조적 제약**으로 표현되고 - **(Y) 이를 통해 아미노산 서열(Y)**을 예측할 수 있을 것이다. 
-    * 실제 현상적인 인과가 아닌 **모델링의 인과 흐름** (현상적 인과 : 아미노산 서열 -> 구조)
-* **2. 정보, 공간, 데이터, 자유도**
-    * **a. 정보**: 모델링 목적에 따른 Signal & Noise 정의 (Signal: 잔기간 local interaction)
-    * **b. 공간**: 정보가 표현 되는 공간. 정보 표현의 독립적 자유도 고려한 resolution 설정 (RBF filtering으로 거리에 다른 기능적 표현 자유도 확장)
-    * **c. 데이터**: 정보를 담는 기능적 독립 unit (데이터간의 종속성이 있는경우 종속성에 관한 추가적 모델링으로 i.i.d 가정을 만족하도록)
-    * **e. 자유도**: 정보의 자유도인지 표현공간의 자유도인지 주체를 명확히 구분 
+PyTorch implementation of Core Architecture for Protein Sequence Design. 
+Inverse folding from 3D structure to amino acid sequence.
 
 ---
 
-## CORE2: 목적에 따른 딥러닝 설계 구현 
+## CORE 1: Modeling 목적 및 수학적 구조
 
-### 1) Overview
-* Learning graph overview
+### 1) 목적
+* **단백질 3차 구조 기반 아미노산 서열 Reverse Inference**
 
-### 2) Encoder 
-* **정보 공간 전환 및 데이터 unit Tensor flow**
-    1. **물리적 표현 공간**: (Nx5x3) Backbone 잔기 x 구성 원자 x Cartesian 거리좌표 
-    2. **잔기간 거리 graph 공간**: (Nxkx25) 
-    3. **잔기간 거리 graph resolution 확장 및 embedding**: (Nxkx25 -> Nxkx400 -> Nxkx128)
-    4. **잔기(노드)간 local interaction을 통한 업데이트**: (Nx128)
-
-### 3) Decoder
-* **Random ordering & masking을 통한 decoding ability 향상**
-    1. 1d direction이 아닌 **random ordering**을 통한 direction bias의 극복 
-    2. **Mask Token**을 통한 masking으로 결정된 잔기의 구조적 제약 학습 
+### 2) 구조 설계 (Logic)
+* **Hierarchical Layer ($Z \rightarrow X \rightarrow Y$)**
+    * **(Z)** 잔기 간 Interaction $\rightarrow$ **(X)** 3차원 구조적 제약 $\rightarrow$ **(Y)** 아미노산 서열 예측.
+    * 모델링 인과 흐름: 구조($X$)를 조건으로 서열($Y$)을 추론 (현상적 인과와 역행).
+* **정보 및 자유도 정의**
+    * **정보**: Signal(잔기 간 Local Interaction)과 Noise의 엄격한 정의.
+    * **공간**: RBF Filtering을 통한 거리별 기능적 표현 자유도(Resolution) 확장.
+    * **데이터**: 기능적 독립 Unit 정의 (Message Passing을 통한 i.i.d 가정 충족).
+    * **자유도**: 정보의 자유도와 표현 공간의 자유도 주체를 명확히 구분.
 
 ---
 
-## CORE3: Smoke test를 통한 설계 검증 및 실제 PDB 데이터를 통한 시각화 
+## CORE 2: 딥러닝 아키텍처 구현
 
-### 1) Smoke test 
-* 각 architecture module별 설계 의도 검증 
+### 1) Encoder (Tensor Flow)
+물리적 공간을 그래프 임베딩 공간으로 전환하는 데이터 Unit 흐름.
 
-### 2) Real data visualization 
-* 코어 아키텍처 기반 및 실제 데이터셋 활용 가설 검증 및 시각화
+* **Step 1. Physical Space**: `(N, 5, 3)` — Backbone 잔기 $\times$ 구성 원자 $\times$ Cartesian 좌표.
+* **Step 2. Graph Space**: `(N, k, 25)` — 잔기 간 거리 Graph.
+* **Step 3. Embedding**: `(N, k, 25)` $\rightarrow$ `(N, k, 400)` $\rightarrow$ `(N, k, 128)` — Resolution 확장 및 임베딩.
+* **Step 4. Node Update**: `(N, 128)` — 잔기(Node) 간 Local Interaction 업데이트.
 
---- 
+### 2) Decoder (Ability Enhancement)
+Random Ordering 및 Masking을 통한 생성 능력 극대화.
+
+* **Random Ordering**: 1D Direction Bias를 극복하기 위한 무작위 추론 순서 설계.
+* **Masking**: Mask Token을 활용하여 결정된 잔기의 구조적 제약 조건을 학습.
+
+---
+
+## CORE 3: 설계 검증 및 시가화
+
+* **Smoke Test**: 각 Architecture Module별 설계 의도 및 수리적 타당성 검증.
+* **Real Data Visualization**: PDB 실제 데이터셋 기반 가설 검증 및 시각화.
+    * fMRI 기반 RSA/Mantel Test를 통한 공간적 인지 지평선 분석.
+
+---
+
 ## Author
-* **Yuseon**
+**Yuseon**
