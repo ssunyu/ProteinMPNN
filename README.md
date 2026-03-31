@@ -1,9 +1,63 @@
-# Protein-Reverse-Inference-Core
+# ProteinMPNN Core-Architecture Implementation
 
 PyTorch implementation of Core Architecture for Protein Sequence Design. 
 Inverse folding from 3D structure to amino acid sequence.
 <img width="2299" height="1080" alt="concat_map_visualization" src="https://github.com/user-attachments/assets/e86f4db6-1155-488b-97f4-8045f957613f" />
+## 🧠 Message Passing & Gradient Propagation
+> **Local Interaction에서 Chemical Logits까지의 순방향(Forward) 및 역방향(Backward) 텐서 연산 흐름**
 
+### 1. Computation Graph
+단일 레이어 내에서 정보가 어떻게 결합, 필터링, 누적되어 최종적으로 화학적 에너지 상태(Logits)로 투영되는지를 나타내는 연산 그래프입니다.
+
+```mermaid
+flowchart TD
+    classDef data fill:#f8f9fa,stroke:#ced4da,stroke-width:2px,color:#212529
+    classDef op fill:#e7f5ff,stroke:#339af0,stroke-width:2px,color:#0b7285
+    classDef weight fill:#fff3bf,stroke:#fcc419,stroke-width:2px,color:#862e9c
+    classDef loss fill:#ffe3e3,stroke:#fa5252,stroke-width:2px,color:#c92a2a
+
+    h_i["h_i (Self)<br/>1 x 128"]:::data
+    h_j["h_j (Neighbor)<br/>1 x 128"]:::data
+    e_ij["e_ij (Edge)<br/>1 x 128"]:::data
+
+    concat(("Concat<br/>||")):::op
+    h_i --> concat
+    h_j --> concat
+    e_ij --> concat
+
+    z["z (Joint Info)<br/>1 x 384"]:::data
+    concat --> z
+
+    w_msg[/"W_msg<br/>384 x 128"/]:::weight
+    matmul1(("MatMul<br/>*")):::op
+    z --> matmul1
+    w_msg --> matmul1
+
+    m["m (Message)<br/>1 x 128"]:::data
+    matmul1 --> m
+
+    add(("Add<br/>+")):::op
+    h_i -.->|"Skip Connection"| add
+    m --> add
+
+    h_out["h_out (Posterior)<br/>1 x 128"]:::data
+    add --> h_out
+
+    w_dec[/"W_dec<br/>128 x 20"/]:::weight
+    matmul2(("MatMul<br/>*")):::op
+    h_out --> matmul2
+    w_dec --> matmul2
+
+    L["L (Logits)<br/>1 x 20"]:::data
+    matmul2 --> L
+
+    loss_fn(("Cross<br/>Entropy")):::loss
+    L --> loss_fn
+    y_true[/"Y_true"/]:::weight
+    y_true --> loss_fn
+
+    J["J (Loss)<br/>Scalar"]:::data
+    loss_fn --> J
 ---
 
 ## CORE 1: Modeling 목적 및 수학적 구조
