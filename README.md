@@ -3,61 +3,73 @@
 PyTorch implementation of Core Architecture for Protein Sequence Design. 
 Inverse folding from 3D structure to amino acid sequence.
 <img width="2299" height="1080" alt="concat_map_visualization" src="https://github.com/user-attachments/assets/e86f4db6-1155-488b-97f4-8045f957613f" />
-## 🧠 Message Passing & Gradient Propagation
-> **Local Interaction에서 Chemical Logits까지의 순방향(Forward) 및 역방향(Backward) 텐서 연산 흐름**
+## 🧠 Message Passing: Forward & Backward Computation Graph
 
-### 1. Computation Graph
-단일 레이어 내에서 정보가 어떻게 결합, 필터링, 누적되어 최종적으로 화학적 에너지 상태(Logits)로 투영되는지를 나타내는 연산 그래프입니다.
+이 다이어그램은 단일 레이어 내에서 정보가 어떻게 결합, 필터링, 누적되어 최종적으로 아미노산 에너지 상태(Logits)로 투영되는지를 나타냅니다. 
 
-```mermaid
-flowchart TD
-    classDef data fill:#f8f9fa,stroke:#ced4da,stroke-width:2px,color:#212529
-    classDef op fill:#e7f5ff,stroke:#339af0,stroke-width:2px,color:#0b7285
-    classDef weight fill:#fff3bf,stroke:#fcc419,stroke-width:2px,color:#862e9c
-    classDef loss fill:#ffe3e3,stroke:#fa5252,stroke-width:2px,color:#c92a2a
+<br>
 
-    h_i["h_i (Self)<br/>1 x 128"]:::data
-    h_j["h_j (Neighbor)<br/>1 x 128"]:::data
-    e_ij["e_ij (Edge)<br/>1 x 128"]:::data
+**[ Information Sources ]**
+* $h_i$ `(1x128)` : 자기 노드 상태 
+* $h_j$ `(1x128)` : 이웃 노드 상태 
+* $e_{ij}$ `(1x128)` : 물리적 엣지 특징
 
-    concat(("Concat<br/>||")):::op
-    h_i --> concat
-    h_j --> concat
-    e_ij --> concat
+---
 
-    z["z (Joint Info)<br/>1 x 384"]:::data
-    concat --> z
+### 🔄 Computation Flow (Forward & Local Gradients)
 
-    w_msg[/"W_msg<br/>384 x 128"/]:::weight
-    matmul1(("MatMul<br/>*")):::op
-    z --> matmul1
-    w_msg --> matmul1
+**Forward Prop Steps** | **Local Gradients**
+:----------------------|:-------------------
+**1. Concatenation**<br>$z = [h_i \parallel h_j \parallel e_{ij}]$<br>*(Shape: 1 x 384)* | $\frac{\partial z}{\partial h_i} = [I \mid 0 \mid 0]$<br>$\frac{\partial z}{\partial h_j} = [0 \mid I \mid 0]$<br>$\frac{\partial z}{\partial e_{ij}} = [0 \mid 0 \mid I]$
+**2. Transformation**<br>$m = z \cdot W_{msg}$<br>*(Shape: 1 x 128)* | $\frac{\partial m}{\partial z} = W_{msg}^T$<br>$\frac{\partial m}{\partial W_{msg}} = z^T$
+**3. Aggregation**<br>$h_{out} = h_i + m$<br>*(Shape: 1 x 128)* | $\frac{\partial h_{out}}{\partial h_i} = I$<br>$\frac{\partial h_{out}}{\partial m} = I$
+**4. Projection**<br>$L = h_{out} \cdot W_{dec}$<br>*(Shape: 1 x 20)* | $\frac{\partial L}{\partial h_{out}} = W_{dec}^T$<br>$\frac{\partial L}{\partial W_{dec}} = h_{out}^T$
+**5. Loss Function**<br>$P_{pred} = \text{Softmax}(L)$<br>$J = \text{CE}(P_{pred}, Y_{true})$<br>*(Shape: Scalar)* | $\frac{\partial J}{\partial L} = P_{pred} - Y_{true}$<br>$\frac{\partial J}{\partial P_{pred}} = -\frac{Y_{true}}{P_{pred}}$
 
-    m["m (Message)<br/>1 x 128"]:::data
-    matmul1 --> m
+---
 
-    add(("Add<br/>+")):::op
-    h_i -.->|"Skip Connection"| add
-    m --> add
+### 📊 Integrated Graph Flow
 
-    h_out["h_out (Posterior)<br/>1 x 128"]:::data
-    add --> h_out
+```text
+[ Information Sources ]
+  h_i ────┐                   
+  h_j ────┼─── [ || ] ─────▶ z (1x384) ───────▶ [ * W_msg ] ─────▶ m (1x128)
+  e_ij ───┘                                                          │
+                                                                     ▼
+                                h_i (Skip Connection) ───────────▶ [ + ]
+                                                                     │
+                                                                     ▼
+                                                                  h_out (1x128)
+                                                                     │
+                                                                     ▼
+                                                                 [ * W_dec ]
+                                                                     │
+                                                                     ▼
+                 Y_true                                            L (1x20)
+                    │                                                │
+                    └─────────────── [ Cross Entropy ] ◀─────────────┘
+                                            │
+                                            ▼
+                                        J (Scalar)
 
-    w_dec[/"W_dec<br/>128 x 20"/]:::weight
-    matmul2(("MatMul<br/>*")):::op
-    h_out --> matmul2
-    w_dec --> matmul2
+================================================================================
 
-    L["L (Logits)<br/>1 x 20"]:::data
-    matmul2 --> L
-
-    loss_fn(("Cross<br/>Entropy")):::loss
-    L --> loss_fn
-    y_true[/"Y_true"/]:::weight
-    y_true --> loss_fn
-
-    J["J (Loss)<br/>Scalar"]:::data
-    loss_fn --> J
+[ Backward Gradients Flow ]
+  ∇J = 1
+  ∇L = P_pred - Y_true
+  
+  ∇W_dec = h_out^T * ∇L
+  ∇h_out = ∇L * W_dec^T
+  
+  ∇m        = ∇h_out
+  ∇h_i_skip = ∇h_out
+  
+  ∇W_msg = z^T * ∇m
+  ∇z     = ∇m * W_msg^T
+  
+  ∇h_i = ∇z[0:128]
+  ∇h_j = ∇z[128:256]
+  ∇e_ij (Dropped)
 ---
 
 ## CORE 1: Modeling 목적 및 수학적 구조
