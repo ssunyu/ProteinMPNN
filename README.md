@@ -2,7 +2,8 @@
 
 PyTorch implementation of Core Architecture for Protein Sequence Design. 
 Inverse folding from 3D structure to amino acid sequence.
-<img width="2299" height="1080" alt="concat_map_visualization" src="https://github.com/user-attachments/assets/e86f4db6-1155-488b-97f4-8045f957613f" />
+<img width="2235" height="1122" alt="antibody_antigen_contact_analysis" src="https://github.com/user-attachments/assets/0586c3ac-0c35-4e94-913d-eedbe138508e" />
+
 
 ---
 
