@@ -1,16 +1,5 @@
 # smoke_test.py — 전체 파이프라인 End-to-End 검증
 #
-# ══════════════════════════════════════════════════════════════════════
-#  검증 전략
-# ══════════════════════════════════════════════════════════════════════
-#
-#  "동작하는가"와 "수학적으로 타당한가"를 함께 검사한다.
-#
-#  합성 단백질 사용 이유:
-#    실제 PDB 데이터 없이도 전체 파이프라인을 검증 가능.
-#    CI/CD 환경에서 빠르게 실행 가능 (외부 데이터 의존성 없음).
-#    물리적으로 타당한 bond length로 생성 → 실제 단백질과 유사한 기하학.
-#
 #  검증 항목:
 #    Step 1. Virtual Cβ: shape + 물리적 bond length
 #    Step 2. RBF: shape + 범위 [0,1] + 중심 근방에서 1
@@ -20,8 +9,6 @@
 #    Step 6. Forward (teacher-forcing): shape (res, 20)
 #    Step 7. Loss & Gradient: backward 통과 + gradient 존재
 #    Step 8. Decode (AR inference): shape (res,) + log_prob 유효성
-#
-# ══════════════════════════════════════════════════════════════════════
 
 import torch
 from core_architecture.config import Config, NUM_AA, NUM_ATOM_PAIRS

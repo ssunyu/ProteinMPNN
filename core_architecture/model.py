@@ -1,29 +1,4 @@
 # model.py — ProteinMPNN: Inverse Folding Model
-# ======================================================
-# [목적]
-#   : Encoder와 Decoder를 결합하여 "구조 기반 서열 설계" 시스템 구축
-#   : Inverse Folding (Structure -> Sequence) 문제의 통합 해결
-# [과정과 이유]
-#   1. 모듈화된 인터페이스 (encode vs decode)
-#       : 고비용의 구조 분석(Encoder)은 1회만 수행하여 캐싱
-#       : 저비용의 서열 생성(Decoder)을 n_samples만큼 반복하여 디자인 효율 극대화
-#   2. 가변적 순서 제어 (Random Ordering)
-#       : 특정 방향(N->C)에 치우치지 않는 강건한 서열-구조 관계 학습
-#       : 모든 잔기가 동등한 맥락(Context)을 가질 수 있도록 확률적 등방성 확보
-#   3. 학습과 추론의 최적화 분리 (Forward vs Sample)
-#       : Training -> Teacher-forcing으로 GPU 병렬 연산 속도 확보
-#       : Inference -> Autoregressive로 실제 물리적 생성 논리 구현
-# [Tensor Flow]
-#   1. Input
-#       : Backbone Coordinates (N x 5 x 3)
-#   2.  Encoding (Global Context)
-#       : node_h, edge_h 생성 (N x 128, N x k x 128)
-#       : 구조적 환경에 대한 고차원적 압축 표현 완성
-#   3. Decoding (Causal Generation)
-#       : [Latent Space + Causal Masking] -> Sequence Logits
-#       : n_samples만큼 반복하며 다양한 서열 후보군 샘플링
-#   4. Output
-#       : Designed Sequences & Logits (N x 20)
 
 from __future__ import annotations
 

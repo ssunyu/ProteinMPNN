@@ -1,33 +1,4 @@
 # training.py — Loss 함수와 학습 루프
-# ======================================================
-# [목적]
-#   : 구조(Structure)와 서열(Sequence) 사이의 최적의 확률 분포 학습
-#   : 실제 데이터의 노이즈와 서열 다양성(Degeneracy)에 강건한 모델 구축
-#
-# [과정과 이유]
-#   1. Label Smoothing (Regularization)
-#       : 정답 AA에만 100% 확률을 주지 않고 주변에 0.1(ε)만큼 분산
-#       : 동일 구조에 여러 서열이 존재할 수 있는 '서열 퇴화(Degeneracy)' 현상 반영
-#       : 모델이 특정 서열에 과적합(Overfitting)되지 않도록 유연성 확보
-#   2. Coordinate Noise (Data Augmentation)
-#       : 학습 시 입력 좌표에 미세한 Gaussian Noise(0.02Å) 추가
-#       : 실제 환경(실험 오차나 예측 구조)의 불안정성에 대한 내성(Robustness) 강화
-#   3. Gradient Clipping (Stability)
-#       : 기울기(Gradient)가 일정 임계값(1.0)을 넘지 않도록 강제 제어
-#       : 복잡한 GNN 연산 과정에서 발생하기 쉬운 Gradient Explosion 방지
-#
-# [Logic Flow]
-#   1. Input (Batch Processing)
-#       : Noisy Coordinates + Ground Truth Sequence
-#   2. Forward Pass (Teacher-Forcing)
-#       : Model.forward() -> Logits (N×20)
-#   3. Loss Calculation (Smoothed NLL)
-#       : Log_softmax + Label Smoothing
-#       : 정답 확률은 높이고, 오답 확률은 균등하게 보정하여 Loss 산출
-#   4. Optimization (Backprop)
-#       : Loss 미분 -> Gradient Clipping 적용 -> Weight Update
-#   5. Output
-#       : 최적화된 모델 파라미터 (Structure-to-Sequence Mapper)
 
 from __future__ import annotations
 
