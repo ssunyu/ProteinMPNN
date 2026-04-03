@@ -1,64 +1,29 @@
 # model.py — ProteinMPNN: Inverse Folding Model
-#
-# ══════════════════════════════════════════════════════════════════════
-#  설계 의도: "구조(structure)를 조건으로 서열(sequence)을 역추론한다."
-# ══════════════════════════════════════════════════════════════════════
-#
-#  Inverse Folding 문제:
-#    Forward: sequence → structure  (단백질 접힘, AlphaFold의 영역)
-#    Inverse: structure → sequence  (ProteinMPNN의 영역)
-#
-#    P(seq | structure): 이 구조를 형성하는 아미노산 서열의 확률 분포
-#    이 분포에서 sampling → 구조적으로 안정적인 새 서열 생성 (protein design)
-#
-# ══════════════════════════════════════════════════════════════════════
-#  전체 공간 변환 체계 (Z → X → Y)
-# ══════════════════════════════════════════════════════════════════════
-#
-#  [Z] Local interaction space (구조 표현):
-#    입력: backbone 좌표 ∈ R^{res × 5atoms × 3}
-#    → k-NN graph + RBF encoding → edge_h ∈ R^{res × k × 400}
-#    → Message passing × n_enc_layers
-#    → node_h ∈ R^{res × hidden},  edge_h ∈ R^{res × k × hidden}
-#    의미: 각 잔기가 구조적 이웃으로부터 정보를 축적한 표현
-#
-#  [X] 3D structural constraint (구조-서열 결합):
-#    Decoder에서 구조 표현(edge_h)과 서열 임베딩(seq_emb)을 결합
-#    e_dec = edge_h ‖ seq_emb_j * ar_mask  ∈ R^{res × k × 2·hidden}
-#    의미: "이 구조적 환경에서 이미 결정된 이웃 서열을 고려할 때"
-#
-#  [Y] Amino acid sequence (서열 예측):
-#    Decoder output → output_proj → logits ∈ R^{res × 20}
-#    logits[r, a] = 잔기 r에 amino acid a를 배치할 미정규화 점수
-#    → softmax → P(aa | structure, context)
-#
-#  세 가지 forward mode:
-#
-#  1. encode():   구조 → 구조 표현  (재사용을 위해 분리)
-#  2. decode():   구조 표현 → 서열  (autoregressive inference)
-#  3. forward():  구조 + 서열 → logits  (teacher-forcing training)
-#
-#  encode를 분리하는 이유:
-#    같은 구조에서 여러 서열을 샘플링할 때 (n_samples번 decode),
-#    구조 encoding은 한 번만 하고 decode만 반복.
-#    계산량: O(n_enc_layers × res × k × h²) 한 번 vs n_samples번
-#
-#  Teacher-Forcing (학습) vs Autoregressive (추론):
-#    학습: 모든 이웃 서열을 조건으로 → ar_mask = all-ones
-#          실제 서열 seq를 조건으로 주고 P(seq[r] | struct, seq_neighbors) 학습
-#          → 병렬 계산, 빠른 수렴
-#    추론: 결정된 이웃만 조건으로 → ar_mask = 단계적으로 채움
-#          이전에 샘플링한 AA가 다음 샘플링의 조건이 됨
-#          → 현실적이지만 O(res)번의 sequential forward pass 필요
-#
-#  Random Decode Order의 설계 의도:
-#    Left-to-right: P(aa_1)P(aa_2|aa_1)P(aa_3|aa_1,aa_2)...
-#    → 앞 잔기는 이웃 context 없이 생성 → 불리
-#    Random permutation π: 모든 잔기가 평균적으로 동일한 수의 이미 결정된 이웃을 가짐
-#    → 생성 시 위치 편향 제거
-#    → 학습 시에도 teacher-forcing이 임의 순서와 일치하도록 훈련됨
-#
-# ══════════════════════════════════════════════════════════════════════
+# ======================================================
+# [목적]
+#   : Encoder와 Decoder를 결합하여 "구조 기반 서열 설계" 시스템 구축
+#   : Inverse Folding (Structure -> Sequence) 문제의 통합 해결
+# [과정과 이유]
+#   1. 모듈화된 인터페이스 (encode vs decode)
+#       : 고비용의 구조 분석(Encoder)은 1회만 수행하여 캐싱
+#       : 저비용의 서열 생성(Decoder)을 n_samples만큼 반복하여 디자인 효율 극대화
+#   2. 가변적 순서 제어 (Random Ordering)
+#       : 특정 방향(N->C)에 치우치지 않는 강건한 서열-구조 관계 학습
+#       : 모든 잔기가 동등한 맥락(Context)을 가질 수 있도록 확률적 등방성 확보
+#   3. 학습과 추론의 최적화 분리 (Forward vs Sample)
+#       : Training -> Teacher-forcing으로 GPU 병렬 연산 속도 확보
+#       : Inference -> Autoregressive로 실제 물리적 생성 논리 구현
+# [Tensor Flow]
+#   1. Input
+#       : Backbone Coordinates (N x 5 x 3)
+#   2.  Encoding (Global Context)
+#       : node_h, edge_h 생성 (N x 128, N x k x 128)
+#       : 구조적 환경에 대한 고차원적 압축 표현 완성
+#   3. Decoding (Causal Generation)
+#       : [Latent Space + Causal Masking] -> Sequence Logits
+#       : n_samples만큼 반복하며 다양한 서열 후보군 샘플링
+#   4. Output
+#       : Designed Sequences & Logits (N x 20)
 
 from __future__ import annotations
 

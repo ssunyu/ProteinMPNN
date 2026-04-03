@@ -1,62 +1,32 @@
 # encoder.py — Graph Neural Network Encoder
+# ======================================================
+# [목적]
+#   : 잔기간 물리적 거리 관계 grpah -> 잔기간 local 상태 update 
 #
-# ══════════════════════════════════════════════════════════════════════
-#  설계 의도: "각 잔기가 이웃으로부터 메시지를 받아 자신의 표현을 갱신한다."
-# ══════════════════════════════════════════════════════════════════════
+# [과정과 이유]
+#   1. Message Passing (EncoderLayer > msg_mlp)
+#       : 아미노산 sequence embedding을 위한 node, edge state 정보 확장 
+#       : node 상태, edge 상태, 물리적 edge feature 정보 concatenation 
+#       : node, edge 상태 및 edge feature update 
+#   2. 3-layer encoding 
+#       : 3-hop message passing으로 local to global context learning 
+#   3. 정보 aggregation 
+#       : 아미노산 Sequence Mapping을 위한 정보 aggregation 
 #
-#  Encoder가 하는 일:
-#    입력: 구조 정보 (edge features: 원자간 거리)
-#    출력: 각 잔기와 엣지의 hidden state (구조를 추상화한 표현)
-#
-#  왜 Graph Neural Network인가:
-#    단백질은 "잔기들의 3D 배열"이다. 이를 grid가 아닌 graph로 처리하면:
-#    - 잔기 수 N이 가변적이어도 동일한 모델 적용 가능
-#    - k-NN 구조로 O(N·k) 계산 (fully-connected O(N²) 대비 효율적)
-#    - 구조의 순열 불변성(permutation invariance) 자연스럽게 달성
-#
-# ══════════════════════════════════════════════════════════════════════
-#  수학적 구조 (Message Passing Framework)
-# ══════════════════════════════════════════════════════════════════════
-#
-#  [공간 H_node] Node hidden space  H = R^{res × hidden}
-#    각 잔기(노드)의 표현. 초기값: 0 벡터 (구조만으로 학습 시작).
-#
-#  [공간 H_edge] Edge hidden space  E = R^{res × k × hidden}
-#    각 엣지(잔기 쌍)의 표현. 초기값: raw edge features (거리 정보).
-#
-#  Message Passing 수식 (1 layer):
-#
-#    1. Message 생성:
-#       m[r, j] = MLP_msg(h_i[r] ‖ h_j[r,j] ‖ e[r,j])
-#       여기서 h_j[r,j] = h[edge_idx[r,j]]  (이웃 잔기의 hidden state)
-#       ‖: concatenation
-#
-#    2. Aggregation (이웃으로부터 집계):
-#       agg[r] = Σ_j m[r, j]    (sum pooling)
-#
-#    3. Node Update:
-#       h'[r] = LayerNorm(h[r] + Dropout(agg[r]))             [잔차 연결 1]
-#       h''[r] = LayerNorm(h'[r] + Dropout(FF(h'[r])))        [잔차 연결 2]
-#
-#    4. Edge Update:
-#       e'[r,j] = LayerNorm(e_proj[r,j] + Dropout(MLP_edge(h''[r] ‖ h''[j] ‖ e[r,j])))
-#
-#  기하학:
-#    각 레이어 = H_node × H_edge → H_node × H_edge 의 비선형 변환.
-#    n_enc_layers번 반복 = 정보가 최대 n_enc_layers-hop 이웃까지 전파.
-#
-#  잔차 연결(Residual Connection)의 설계 의도:
-#    h'' = h + ΔF(h):  "현재 표현은 보존하고, 학습은 잔차(Δ)를 목표"
-#    깊은 네트워크에서 gradient가 h를 통해 직접 흘러 vanishing 방지.
-#    초기: ΔF(h) ≈ 0 → h'' ≈ h (identity initialization 효과).
-#
-#  왜 Sum Pooling인가 (vs mean, max):
-#    Sum: 이웃 수에 비례한 정보 축적 → 국소 밀도(density) 표현 가능
-#    Mean: 이웃 수 정규화 → 이웃 수 정보 손실
-#    Max: 가장 강한 신호만 → 약한 상호작용 손실
-#    단백질에서 접촉 수는 구조 정보 → Sum이 적합.
-#
-# ══════════════════════════════════════════════════════════════════════
+# [Tensor flow]
+#   1. Input  
+#       : RBF_edge_feature (Nxkx400)
+#   2. Message Passing
+#       1) embedding
+#           : node_feature, edge_feature embedding (N x 128, N x k x 128)
+#       2) concatenation 
+#           : [node_self, node_neighbor, edge_feature](N x k x 128*3)
+#       3) projection
+#           : N x k x 384 -> N x k x 128
+#       4) aggregation
+#           :  node_self (N x 128)
+#   3. Output 
+#       : node_self, edge_features (N x 128, N x k x 128)
 
 from __future__ import annotations
 
@@ -128,10 +98,6 @@ class EncoderLayer(nn.Module):
         #    node_h'  = LN(node_h + Drop(agg))    ← residual 1
         #    node_h'' = LN(node_h' + Drop(FF(node_h'))) ← residual 2
         #    e'[r,j]  = LN(e_proj[r,j] + Drop(MLP_edge(h''_i ‖ h''_j ‖ e)))
-        #
-        #  einops 사용:
-        #    neighbor lookup: flat indexing + rearrange로 shape 복원
-        #    aggregation: reduce 'res k hidden -> res hidden' sum
         # ──────────────────────────────────────────────────────────────
 
         res, k, _ = edge_h.shape

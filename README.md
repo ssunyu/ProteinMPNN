@@ -1,6 +1,6 @@
 # ProteinMPNN — Core Architecture from Scratch
 
-A clean PyTorch reimplementation of [ProteinMPNN](https://www.science.org/doi/10.1126/science.add2187) (Dauparas et al., *Science* 2022).
+PyTorch implementation of core architecture for [ProteinMPNN](https://www.science.org/doi/10.1126/science.add2187) (Dauparas et al., *Science* 2022).
 Built from the ground up — not to reproduce numbers, but to own the design decisions.
 
 <img width="2235" height="1122" alt="antibody_antigen_contact_analysis" src="https://github.com/user-attachments/assets/0586c3ac-0c35-4e94-913d-eedbe138508e" />

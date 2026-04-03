@@ -1,68 +1,35 @@
 # decoder.py — Autoregressive Graph Neural Network Decoder
+# ======================================================
+# [목적]
+#   : encoding 된 잔기 상태정보 -> sequence writing 
 #
-# ══════════════════════════════════════════════════════════════════════
-#  설계 의도: "Encoder가 구조를 읽었다면, Decoder는 서열을 쓴다.
-#              단, 이미 결정된 이웃의 서열 정보를 조건으로 삼아."
-# ══════════════════════════════════════════════════════════════════════
+# [과정과 이유]
+#   1. Message Passing 
+#       : [node 상태,  edge 상태, 서열 embedding] -> 서열 logit
+#   2. auto regressive causal masking 
+#       : embedded 구조 표현 + 결정된 이웃서열 -> 다음 잔기 예측 
+#       : 결정 되지 않은 서열 -> mask token embedding 
+#   3. training -> parallel random ordering 
+#       : 입체구조는 sequential 하지 않으므로 ordering bias 제거 목적
+#       : random ordering에 대한 ar_masking을 parallel processing 
+#   4. inference -> sequential 
+#       : auto_regressive inference 
 #
-#  Encoder와 Decoder의 차이:
-#    Encoder: 구조(edge features) → 구조 표현(node/edge hidden states)
-#             모든 이웃의 정보를 동시에 사용 (fully visible)
-#    Decoder: 구조 표현 + 이미 결정된 이웃 서열 → 다음 잔기 예측
-#             인과적 마스킹(causal masking): 아직 결정되지 않은 이웃은 0
-#
-# ══════════════════════════════════════════════════════════════════════
-#  수학적 구조 (Autoregressive Conditional Distribution)
-# ══════════════════════════════════════════════════════════════════════
-#
-#  목표:
-#    P(seq | structure) = Π_{t=1}^{res} P(aa_{π(t)} | structure, aa_{π(<t)})
-#    π: decode order (permutation)
-#    π(<t): t번째 이전에 이미 결정된 잔기들
-#
-#  Decoder Layer의 메시지 전달:
-#
-#    현재 위치 r을 생성하는 시점에서:
-#    - 이미 결정된 이웃 j: seq_emb[j]를 조건으로 사용  (ar_mask[r,j] = 1)
-#    - 아직 결정되지 않은 이웃 j: 조건으로 사용 불가     (ar_mask[r,j] = 0)
-#
-#    수식:
-#      seq_j[r,j] = seq_emb[edge_idx[r,j]] × ar_mask[r,j]
-#                 ∈ R^{hidden}
-#      (ar_mask=0이면 0벡터 → "이 이웃은 아직 모름")
-#
-#      e_dec[r,j] = edge_h[r,j] ‖ seq_j[r,j]
-#                 ∈ R^{hidden + hidden = 2·hidden}
-#      (구조 정보 + 서열 정보를 concat → edge에 서열 조건 통합)
-#
-#      msg[r,j] = MLP_msg(h_i[r] ‖ h_j[r,j] ‖ e_dec[r,j])
-#      agg[r]   = Σ_j msg[r,j]
-#      h'[r]    = LN(h[r] + Drop(agg[r]))
-#      h''[r]   = LN(h'[r] + Drop(FF(h'[r])))
-#
-#  ar_mask의 기하학:
-#    ar_mask: Bool^{res × k} (실수로 표현, 0 or 1)
-#    ar_mask × seq_emb: R^{res×k×hidden}에서 "정보 게이트"
-#    ar_mask[r,j] = 1: 이웃 j의 서열 정보가 message에 포함됨
-#    ar_mask[r,j] = 0: 이웃 j의 서열 정보가 차단됨 (0벡터)
-#    → 시간적 인과관계(causal)를 공간적 마스킹으로 표현
-#
-#  왜 edge에 seq를 concat하는가 (node에 add하지 않고):
-#    엣지 (r, j): "잔기 r이 잔기 j의 서열을 조건으로 삼는" 관계
-#    이 관계는 방향성이 있음 (j가 결정됐는지는 r→j 방향에 의존)
-#    node에 add하면 모든 이웃에 균등하게 적용 → 방향성 손실
-#    edge에 concat → 각 이웃 방향의 서열 조건을 독립적으로 표현
-#
-#  학습 시 (teacher-forcing) vs 추론 시 (autoregressive):
-#    학습: ar_mask = all-ones → 모든 이웃 서열이 조건으로 제공
-#          P(seq[r] | structure, seq_all_neighbors) 학습
-#          → 병렬 계산 가능, 빠른 학습
-#    추론: ar_mask = 결정된 이웃만 1
-#          실제 생성 조건에 맞게 autoregressive 샘플링
-#          → 현실적이지만 단계적 계산 필요
-#
-# ══════════════════════════════════════════════════════════════════════
-
+# [Tensor flow]
+#   1. Input 
+#       1) encoding_output: node_self, edge_features (N x 128, N x k x 128)
+#       2) sequence embedding: sequence_groudtruth (N x 128)
+#   2. Message Passing 
+#       1) concatenation 
+#           : [node_self || node_neighbor || edge_features || sequence_neighbor] (N x k x 128*4)
+#       2) masking 
+#           : concatenation * random_order_mask ( (N x k x 128*4 ) * (N x k x 1)) -> broadcasting으로 한번에 처리
+#       3) projection  
+#           : N x k x 512 -> N x k x 128 
+#       4) aggregation 
+#           : N x k x 128 -> N x 128
+#   3. Output 
+#       : N x 20 Logits
 from __future__ import annotations
 
 import torch
@@ -118,11 +85,6 @@ class DecoderLayer(nn.Module):
         #    agg[r]     = Σ_j msg[r,j]
         #    h'         = LN(node_h + Drop(agg))
         #    h''        = LN(h' + Drop(FF(h')))
-        #
-        #  einops:
-        #    seq_j lookup: flat indexing + rearrange
-        #    ar_mask 적용: rearrange로 hidden 차원 broadcast
-        #    aggregation: reduce 'res k hidden -> res hidden' sum
         # ──────────────────────────────────────────────────────────────
 
         res, k = edge_idx.shape

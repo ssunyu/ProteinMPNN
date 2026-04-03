@@ -1,32 +1,7 @@
 # config.py — 모델 설정, 전역 상수, 데이터 컨테이너
-#
-# ══════════════════════════════════════════════════════════════════════
-#  이 파일의 역할
-# ══════════════════════════════════════════════════════════════════════
-#
-#  모든 하이퍼파라미터와 공간 정의를 한 곳에 모은다.
-#  "무엇을 만드는가"와 "어떤 공간에서 만드는가"를 명시적으로 선언.
-#
-#  ProteinMPNN이 다루는 공간들:
-#
-#  [물리 공간] R^3
-#    단백질 원자 좌표. Cartesian XYZ. 단위: Å (옹스트롬).
-#    backbone 5개 원자: N, Cα, C, O, Cβ(virtual).
-#
-#  [아미노산 공간] {0, ..., 19}  ← NUM_AA = 20
-#    20개의 표준 아미노산. 이산(discrete) 공간.
-#    AA_ALPHABET: 알파벳 순서로 인덱스 부여.
-#    MASK_TOKEN = 20: "아직 결정되지 않은 잔기"를 표현하는 특수 토큰.
-#
-#  [임베딩 공간] R^{hidden_dim}
-#    신경망이 정보를 처리하는 연속 공간.
-#    물리 공간 R^3 → 그래프 feature → R^{hidden_dim}의 변환 체계.
-#
-#  [그래프 공간] (V, E)
-#    V = {0, ..., n_res-1}: 잔기(residue) 노드 집합
-#    E ⊆ V × V:             k-NN 기반 인접 엣지 집합 (k = k_neighbors)
-#    각 노드: R^{hidden_dim} 벡터
-#    각 엣지: R^{edge_dim} 벡터  (edge_dim = NUM_ATOM_PAIRS * num_rbf = 400)
+# ======================================================
+# [목적]
+#   : 하이퍼파라미터 & 공간 정의 
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -76,17 +51,10 @@ class Config:
     #   16 basis: 각 basis가 (22-2)/16 ≈ 1.25Å 해상도로 거리 구간을 분할.
 
 
-# ── 데이터 컨테이너 (NamedTuple) ────────────────────────────────────────
-#
-# NamedTuple을 사용하는 이유:
-#   dict: key가 문자열 → IDE에서 타입 추론 불가
-#   dataclass: mutable → 실수로 덮어쓸 위험
-#   NamedTuple: immutable + 타입 주석 + 위치/이름 모두 접근 가능
-#   → 함수 반환값의 의미가 코드 레벨에서 명확히 표현됨
+# ── 데이터 컨테이너 ────────────────────────────────────────
 
 class EncoderOutput(NamedTuple):
     # Encoder가 생성하는 구조 표현 (structure representation)
-    # 이 세 텐서가 decoder로 전달되는 "컴파일된 구조 정보"
     node_h   : Float[Tensor, "res hidden"]   # 각 잔기의 hidden state
     edge_h   : Float[Tensor, "res k hidden"] # 각 엣지의 hidden state
     edge_idx : Int[Tensor, "res k"]          # k-NN 인접 행렬 (topology)

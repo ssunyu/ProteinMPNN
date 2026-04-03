@@ -1,47 +1,33 @@
 # training.py — Loss 함수와 학습 루프
+# ======================================================
+# [목적]
+#   : 구조(Structure)와 서열(Sequence) 사이의 최적의 확률 분포 학습
+#   : 실제 데이터의 노이즈와 서열 다양성(Degeneracy)에 강건한 모델 구축
 #
-# ══════════════════════════════════════════════════════════════════════
-#  설계 의도: "학습과 추론을 명확히 분리한다.
-#              학습: 구조→서열 복원. 추론: 새 서열 생성."
-# ══════════════════════════════════════════════════════════════════════
+# [과정과 이유]
+#   1. Label Smoothing (Regularization)
+#       : 정답 AA에만 100% 확률을 주지 않고 주변에 0.1(ε)만큼 분산
+#       : 동일 구조에 여러 서열이 존재할 수 있는 '서열 퇴화(Degeneracy)' 현상 반영
+#       : 모델이 특정 서열에 과적합(Overfitting)되지 않도록 유연성 확보
+#   2. Coordinate Noise (Data Augmentation)
+#       : 학습 시 입력 좌표에 미세한 Gaussian Noise(0.02Å) 추가
+#       : 실제 환경(실험 오차나 예측 구조)의 불안정성에 대한 내성(Robustness) 강화
+#   3. Gradient Clipping (Stability)
+#       : 기울기(Gradient)가 일정 임계값(1.0)을 넘지 않도록 강제 제어
+#       : 복잡한 GNN 연산 과정에서 발생하기 쉬운 Gradient Explosion 방지
 #
-# ══════════════════════════════════════════════════════════════════════
-#  Loss 함수: Negative Log-Likelihood with Label Smoothing
-# ══════════════════════════════════════════════════════════════════════
-#
-#  기본 NLL Loss:
-#    L_NLL = -(1/|CDR|) Σ_r log P(seq[r] | structure, context)
-#           = -(1/|CDR|) Σ_r log_softmax(logits[r, seq[r]])
-#
-#  Label Smoothing (ε = 0.1):
-#    L_smooth = (1-ε)·L_NLL - ε·H(uniform)
-#             = (1-ε)·L_NLL - ε·(1/20)·Σ_a log P(a | ...)
-#             = (1-ε)·L_NLL + ε·mean(log_probs)
-#
-#    수식: L = (1-ε)·(-log P(seq[r]|...)) - ε·mean_a(log P(a|...))
-#
-#    기하학:
-#      one-hot target: [0,...,1,...,0] (20-simplex의 꼭짓점)
-#      smoothed target: [(ε/20),...,(1-ε+ε/20),...,(ε/20)] (simplex 내부)
-#      → 모델이 100% 확신하지 않고 다른 AA 가능성도 열어두도록 regularization
-#
-#    왜 label smoothing인가:
-#      단백질 서열은 1:1 대응이 아니다.
-#      같은 구조를 형성하는 여러 서열이 존재 (sequence degeneracy).
-#      label smoothing: "정답 AA에 집중하되, 대안 AA도 작은 확률 부여"
-#      → 과적합 방지, 자연적인 서열 다양성 반영
-#
-#  Gradient Clipping:
-#    ||∇L||_2 > max_norm이면:  ∇L ← ∇L × (max_norm / ||∇L||_2)
-#    목적: gradient explosion 방지 (GNN에서 발생하기 쉬움)
-#    max_norm=1.0: ProteinMPNN 원저자 설정
-#
-#  Coordinate Noise (학습 augmentation):
-#    σ_noise = 0.02Å: 학습 시 좌표에 Gaussian noise 추가
-#    목적: 구조 예측 오차에 대한 robustness → 실제 predicted structure에 적용 시 강인함
-#    수식: s_noisy = s + ε,  ε ~ N(0, σ²·I)
-#
-# ══════════════════════════════════════════════════════════════════════
+# [Logic Flow]
+#   1. Input (Batch Processing)
+#       : Noisy Coordinates + Ground Truth Sequence
+#   2. Forward Pass (Teacher-Forcing)
+#       : Model.forward() -> Logits (N×20)
+#   3. Loss Calculation (Smoothed NLL)
+#       : Log_softmax + Label Smoothing
+#       : 정답 확률은 높이고, 오답 확률은 균등하게 보정하여 Loss 산출
+#   4. Optimization (Backprop)
+#       : Loss 미분 -> Gradient Clipping 적용 -> Weight Update
+#   5. Output
+#       : 최적화된 모델 파라미터 (Structure-to-Sequence Mapper)
 
 from __future__ import annotations
 
@@ -71,16 +57,12 @@ def sequence_nll_loss(
     #    loss[r]         = (1-ε)·nll[r] - ε·smooth[r]
     #    L               = sum(loss[mask]) / normalizer
     #
-    #  einops gather 사용:
-    #    targets: (res,) → (res, 1) for gather → (res,)
-    #    nll = -log_probs.gather(1, targets_expanded).squeeze(1)
-    #
     #  Normalizer = 2000:
     #    원저자 설정. 잔기 수로 나누는 대신 고정값 사용.
     #    다양한 길이의 단백질에서 loss scale을 일정하게 유지.
     # ──────────────────────────────────────────────────────────────────
 
-    # L → log-simplex: (res, 20)
+    # L → (res, 20)
     log_probs = F.log_softmax(logits, dim=-1)
 
     # NLL: 정답 AA의 log-prob 추출
