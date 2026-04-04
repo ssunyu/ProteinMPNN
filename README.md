@@ -15,12 +15,12 @@ Inverse protein folding is the same question in a different domain. A backbone s
 
 ---
 
-## Modeling Logic: Z → X → Y
+## Modeling Logic: X → Z → Y
 
 The architecture is built around a three-level causal hierarchy:
 
 ```
-(Z) residue interactions  →  (X) 3D structural constraints  →  (Y) amino acid sequence
+(X) 3D structural constraints →  (Z) residue interactions  →  (Y) amino acid sequence
 ```
 
 This is a deliberate inversion of physical causation. In nature, sequence determines structure. Here, structure is the condition and sequence is the inference target — a reverse inference problem.
@@ -59,7 +59,9 @@ Keeping these two distinct was the main thing I wanted to verify by implementing
 
 **Real-data visualization** uses PDB structure 1MLC (antibody–antigen complex) to test whether k-NN contact maps based purely on Cα distances capture binding interface structure.
 
-The finding: distance-based graphs systematically underrepresent long-range and cross-chain interactions at the binding interface. Residues that are spatially separated can be functionally coupled. In fMRI, this is the canonical motivation for functional connectivity analysis over anatomical proximity (RSA/Mantel test framework). The same gap exists here — and it is the starting point for the extension in [`ensemble_cdr_design/`](../ensemble_cdr_design/).
+The finding: distance-based graphs systematically underrepresent long-range and cross-chain interactions at the binding interface. Residues that are spatially separated can be functionally coupled. In fMRI, this is the canonical motivation for functional connectivity analysis over anatomical proximity (RSA/Mantel test framework). The same gap exists here.
+
+Implementing the model also changed how I read the surrounding literature — where ProteinMPNN sits in the current antibody design landscape, why structure prediction accuracy matters at the graph level, and what the gap between ProteinMPNN-based pipelines and tightly-coupled approaches (e.g., Bang et al. 2024, 2025) looks like from the inside. Those reading notes are in [`paper_notes.md`](./paper_notes.md).
 
 ---
 
@@ -94,9 +96,19 @@ out   = model.decode(enc, temperature=0.1)   # out.sequence, out.log_prob
 
 ---
 
-## Reference
+## References
 
 Dauparas, J. et al. *Robust deep learning–based protein sequence design using ProteinMPNN.* Science 378, 49–56 (2022).
+
+Hummer, A.M., Abanades, B. & Deane, C.M. *Advances in computational structure-based antibody design.* Current Opinion in Structural Biology 74, 102379 (2022).
+
+Watson, J.L. et al. *De novo design of protein structure and function with RFdiffusion.* Nature 620, 1089–1100 (2023).
+
+Abramson, J. et al. *Accurate structure prediction of biomolecular interactions with AlphaFold 3.* Nature 630, 493–500 (2024).
+
+Bang, I. et al. *Accurate antibody loop structure prediction enables zero-shot design of target-specific antibodies.* (2024).
+
+Bang, I. et al. *Precise, specific, and sensitive de novo antibody design across multiple cases.* bioRxiv (2025).
 
 ---
 
