@@ -1,4 +1,5 @@
 # model.py — ProteinMPNN: Inverse Folding Model
+# ======================================================
 
 from __future__ import annotations
 
@@ -104,36 +105,6 @@ class ProteinMPNN(nn.Module):
         decode_order : Int[Tensor, "res"] | None = None,
         temperature  : float = 0.1,
     ) -> DesignOutput:
-        # ──────────────────────────────────────────────────────────────
-        #  공간 변환:  Z × Seq_partial → Seq_full
-        #
-        #  수식:
-        #    seq: {0,...,19,MASK}^{res}  ← 현재 결정 상태
-        #    for t = 1,...,res:
-        #      r = π(t)                   ← 이번에 결정할 잔기
-        #      if seq[r] != MASK: skip    ← framework/partial 위치
-        #      ar_mask[r,j] = 1 if edge_idx[r,j] in decoded_set else 0
-        #      node_h' = DecoderLayer(node_h, edge_h, seq_emb, ar_mask)
-        #      logit_r = output_proj(node_h'[r])
-        #      aa_r ~ Categorical(softmax(logit_r / T))
-        #      seq[r] = aa_r
-        #      decoded_set.add(r)
-        #
-        #  ar_mask 업데이트 시 Python set 사용:
-        #    O(1) lookup for "is neighbor j already decoded?"
-        #    decoded_set: 결정된 잔기 인덱스의 집합
-        #
-        #  Temperature T의 효과:
-        #    T→0: argmax (가장 높은 확률의 AA만 선택, 다양성 없음)
-        #    T=1: 원래 분포에서 샘플링
-        #    T→∞: uniform random (구조 무관)
-        #    T=0.1 (기본값): 높은 confidence 유지 + 적절한 다양성
-        #
-        #  Numerical stability:
-        #    logit / T: T가 작으면 logit이 증폭 → overflow 가능
-        #    max subtraction: softmax(x) = softmax(x - max(x)) (수학적 동치)
-        #    → logit - max(logit) 후 T로 나누면 overflow 방지
-        # ──────────────────────────────────────────────────────────────
 
         res    = enc_out.node_h.shape[0]
         device = enc_out.node_h.device
@@ -211,22 +182,6 @@ class ProteinMPNN(nn.Module):
         o_coords  : Float[Tensor, "res xyz"],
         sequence  : Int[Tensor, "res"],
     ) -> Float[Tensor, "res aa"]:
-        # ──────────────────────────────────────────────────────────────
-        #  Teacher-Forcing:
-        #    학습 시에는 실제 서열(sequence)을 조건으로 제공.
-        #    ar_mask = all-ones: 모든 이웃의 서열 정보를 동시에 사용.
-        #
-        #  왜 학습에서 teacher-forcing을 쓰는가:
-        #    autoregressive 학습: 이전 예측이 틀리면 다음 입력이 오염
-        #                         → 오차 누적 (exposure bias)
-        #    teacher-forcing: 항상 정답 서열을 조건으로 → 안정적 학습
-        #    → 추론 시 exposure bias가 있지만 단백질 design에서는 허용됨
-        #      (서열 recovery를 최대화하는 것이 목적)
-        #
-        #  출력:
-        #    logits ∈ R^{res × 20}
-        #    cross-entropy loss: -Σ_r log P(seq[r] | structure, seq_neighbors)
-        # ──────────────────────────────────────────────────────────────
 
         enc_out = self.encode(n_coords, ca_coords, c_coords, o_coords)
         seq_emb = self.seq_emb(sequence)                # (res, hidden)

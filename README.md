@@ -15,12 +15,12 @@ Inverse protein folding is the same question in a different domain. A backbone s
 
 ---
 
-## Modeling Logic: X → Z → Y
+## Modeling Logic: Z → X → Y
 
 The architecture is built around a three-level causal hierarchy:
 
 ```
-(X) 3D structural constraints →  (Z) residue interactions  →  (Y) amino acid sequence
+(Z) residue interactions  →  (X) 3D structural constraints  →  (Y) amino acid sequence
 ```
 
 This is a deliberate inversion of physical causation. In nature, sequence determines structure. Here, structure is the condition and sequence is the inference target — a reverse inference problem.

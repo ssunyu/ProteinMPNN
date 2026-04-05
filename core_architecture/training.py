@@ -100,15 +100,6 @@ def training_step(
     #    s_noisy = s + ε (4개 원자 전부 동일한 ε 사용)
     #    → backbone geometry 유지하며 위치를 약간 흔듦
     #    → 구조 예측 오차(AlphaFold prediction error)에 대한 robustness 확보
-    #
-    #  배치 구조:
-    #    batch["n_coords"]  : Float[Tensor, "res 3"]
-    #    batch["ca_coords"] : Float[Tensor, "res 3"]
-    #    batch["c_coords"]  : Float[Tensor, "res 3"]
-    #    batch["o_coords"]  : Float[Tensor, "res 3"]
-    #    batch["sequence"]  : Int[Tensor, "res"]
-    #    batch["mask"]      : Bool[Tensor, "res"] | None
-    #    batch["noise_std"] : float | None  (기본값 0.02)
     # ──────────────────────────────────────────────────────────────────
 
     optimizer.zero_grad()
